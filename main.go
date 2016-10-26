@@ -75,7 +75,7 @@ func getAllRepos(ctx context.Context, reg client.Registry) []string {
 	return repos
 }
 
-func getRepository(ctx context.Context, repourl, repname string, user, pwd string) (*repository, error) {
+func getRepository(ctx context.Context, repourl, repname string) (*repository, error) {
 	name, _ := reference.ParseNamed(repname)
 	rep, err := client.NewRepository(ctx, name, repourl, ba)
 	if err != nil {
@@ -160,7 +160,7 @@ func (r *repository) getBlobInfos() ([]blobinfo, error) {
 var (
 	user     = flag.String("user", "", "the user to login for your registry")
 	password = flag.String("password", "", "the password to login for your registry")
-	numDays  = flag.Int("num", -1, "number of days to keep; keep negative when you do not want to delete")
+	numDays  = flag.Int("num", -1, "number of days to keep; keep negative when you want to dump the digest's")
 	dry      = flag.Bool("dry", true, "do not really delete")
 	ba       = http.DefaultTransport
 )
@@ -187,19 +187,22 @@ func main() {
 	repos := getAllRepos(ctx, reg)
 
 	for _, r := range repos {
-		rep, e := getRepository(ctx, flag.Arg(0), r, flag.Arg(1), flag.Arg(2))
+		rep, e := getRepository(ctx, flag.Arg(0), r)
 		checkErr(e)
-		todelete := flag.Arg(4)
-		if todelete != "" {
-			rep.manifests.Delete(rep.ctx, digest.Digest(todelete))
-			return
-		}
 		blobs, e := rep.getBlobInfos()
 		checkErr(e)
 		for _, b := range blobs {
-			if b.created.Before(oldest) {
-				fmt.Printf("repo:%s:%s, digest: %s, created: %s\n", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
-				rep.manifests.Delete(rep.ctx, digest.Digest(b.digest))
+			if *numDays >= 0 {
+				if b.created.Before(oldest) {
+					if *dry {
+						fmt.Printf("DRY: repo:%s:%s, digest: %s, created: %s\n", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
+					} else {
+						fmt.Printf("repo:%s:%s, digest: %s, created: %s\n", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
+						rep.manifests.Delete(rep.ctx, digest.Digest(b.digest))
+					}
+				}
+			} else {
+				fmt.Printf("FOUND: repo:%s:%s, digest: %s, created: %s\n", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
 			}
 		}
 	}
