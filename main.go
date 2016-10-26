@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -22,12 +22,6 @@ import (
 	_ "github.com/docker/distribution/manifest/schema1"
 	_ "github.com/docker/distribution/manifest/schema2"
 )
-
-type basicAuthTransport struct {
-	*http.Transport
-	Username string
-	Password string
-}
 
 type blobinfo struct {
 	repo    string
@@ -45,11 +39,6 @@ type repository struct {
 	blobs         distribution.BlobStore
 	manifests     distribution.ManifestService
 	digestConfigs map[string]interface{}
-}
-
-func (bat *basicAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req.SetBasicAuth(bat.Username, bat.Password)
-	return bat.Transport.RoundTrip(req)
 }
 
 func checkErr(err error) {
@@ -80,7 +69,7 @@ func getAllRepos(ctx context.Context, reg client.Registry) []string {
 
 func getRepository(ctx context.Context, repourl, repname string) (*repository, error) {
 	name, _ := reference.ParseNamed(repname)
-	rep, err := client.NewRepository(ctx, name, repourl, ba)
+	rep, err := client.NewRepository(ctx, name, repourl, transport)
 	if err != nil {
 		return nil, err
 	}
@@ -161,11 +150,16 @@ func (r *repository) getBlobInfos() ([]blobinfo, error) {
 }
 
 var (
-	user     = flag.String("user", "", "the user to login for your registry")
-	password = flag.String("password", "", "the password to login for your registry")
-	numDays  = flag.Int("num", -1, "number of days to keep; keep negative when you want to dump the digest's")
-	dry      = flag.Bool("dry", true, "do not really delete")
-	ba       = http.DefaultTransport
+	user      = flag.String("user", "", "the user to login for your registry")
+	password  = flag.String("password", "", "the password to login for your registry")
+	numDays   = flag.Int("num", -1, "number of days to keep; keep negative when you want to dump the digest's")
+	dry       = flag.Bool("dry", true, "do not really delete")
+	transport = &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
 )
 
 func main() {
@@ -175,37 +169,22 @@ func main() {
 		fmt.Printf("Specify a registry URL")
 		os.Exit(0)
 	}
-	tr := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	}
 	ctx := dockercontext.Background()
 	if *user != "" {
-		ba = &basicAuthTransport{
-			Transport: tr,
-			Username:  *user,
-			Password:  *password,
-		}
+		u, e := url.Parse(registryURL)
+		checkErr(e)
+		u.User = url.UserPassword(*user, *password)
+		registryURL = u.String()
 	}
 
 	oldest := time.Now().Add(time.Duration(*numDays) * -24 * time.Hour)
 
-	reg, err := client.NewRegistry(ctx, flag.Arg(0), ba)
+	reg, err := client.NewRegistry(ctx, registryURL, transport)
 	checkErr(err)
 	repos := getAllRepos(ctx, reg)
 
 	for _, r := range repos {
-		rep, e := getRepository(ctx, flag.Arg(0), r)
+		rep, e := getRepository(ctx, registryURL, r)
 		checkErr(e)
 		blobs, e := rep.getBlobInfos()
 		checkErr(e)
