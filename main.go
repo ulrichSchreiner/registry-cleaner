@@ -24,6 +24,7 @@ import (
 )
 
 type basicAuthTransport struct {
+	*http.Transport
 	Username string
 	Password string
 }
@@ -48,7 +49,7 @@ type repository struct {
 
 func (bat *basicAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.SetBasicAuth(bat.Username, bat.Password)
-	return http.DefaultTransport.RoundTrip(req)
+	return bat.Transport.RoundTrip(req)
 }
 
 func checkErr(err error) {
@@ -174,7 +175,7 @@ func main() {
 		fmt.Printf("Specify a registry URL")
 		os.Exit(0)
 	}
-	http.DefaultTransport = &http.Transport{
+	tr := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
 			Timeout:   30 * time.Second,
@@ -191,8 +192,9 @@ func main() {
 	ctx := dockercontext.Background()
 	if *user != "" {
 		ba = &basicAuthTransport{
-			Username: *user,
-			Password: *password,
+			Transport: tr,
+			Username:  *user,
+			Password:  *password,
 		}
 	}
 
