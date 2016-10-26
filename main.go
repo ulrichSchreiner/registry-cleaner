@@ -92,6 +92,7 @@ func getRepository(ctx context.Context, repourl, repname string) (*repository, e
 }
 
 func (r *repository) getConfig(dig digest.Digest) (map[string]interface{}, error) {
+
 	mf, err := r.manifests.Get(r.ctx, dig)
 	if err != nil {
 		return nil, err
@@ -122,6 +123,7 @@ func (r *repository) getBlobInfos() ([]blobinfo, error) {
 	}
 
 	for _, t := range all {
+		log.Printf("Processing repository '%s:%s'", r.reponame, t)
 		tg, e := r.tags.Get(r.ctx, t)
 		if e != nil {
 			log.Printf("ERROR: cannot get tag info for tag '%s': %s", t, e)
@@ -184,6 +186,7 @@ func main() {
 	repos := getAllRepos(ctx, reg)
 
 	for _, r := range repos {
+		log.Printf("Processing repository: %s", r)
 		rep, e := getRepository(ctx, registryURL, r)
 		checkErr(e)
 		blobs, e := rep.getBlobInfos()
