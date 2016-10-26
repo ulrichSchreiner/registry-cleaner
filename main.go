@@ -183,6 +183,7 @@ func main() {
 
 	reg, err := client.NewRegistry(ctx, registryURL, transport)
 	checkErr(err)
+	log.Printf("query all repos ...")
 	repos := getAllRepos(ctx, reg)
 
 	for _, r := range repos {
