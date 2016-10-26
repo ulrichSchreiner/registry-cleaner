@@ -1,0 +1,6 @@
+package: gitlab.com/usc/registry-cleaner
+import:
+- package: github.com/docker/distribution
+  version: ^2.5.1
+  subpackages:
+  - registry/client

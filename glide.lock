@@ -1,0 +1,8 @@
+hash: 340884670151bbe08b46e7c1b9039f05972e35de3e587b6d5ca5cab722178755
+updated: 2016-10-25T13:25:18.591253305+02:00
+imports:
+- name: github.com/docker/distribution
+  version: 12acdf0a6c1e56d965ac6eb395d2bce687bf22fc
+  subpackages:
+  - registry/client
+testImports: []
