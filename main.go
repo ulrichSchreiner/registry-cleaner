@@ -178,7 +178,7 @@ var (
 	user      = flag.String("user", "", "the user to login for your registry")
 	password  = flag.String("password", "", "the password to login for your registry")
 	numDays   = flag.Int("num", -1, "number of days to keep; keep negative when you want to dump the digest's")
-	dry       = flag.Bool("dry", true, "do not really delete")
+	dry       = flag.Bool("dry", false, "do not really delete")
 	keep      = flag.String("keep", "", "regexp for repositories which should not be deleted, will be matched against repname:tag")
 	remove    = flag.String("remove", ".*", "regexp for repositories which should be deleted, will be matched against repname:tag")
 	transport = &http.Transport{
@@ -237,7 +237,10 @@ func main() {
 						log.Printf("[INFO] DRY: repo:%s:%s, digest: %s, created: %s", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
 					} else {
 						log.Printf("[INFO] repo:%s:%s, digest: %s, created: %s", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
-						rep.manifests.Delete(rep.ctx, digest.Digest(b.digest))
+						e = rep.manifests.Delete(rep.ctx, digest.Digest(b.digest))
+						if e != nil {
+							log.Printf("[ERROR] error deleting %s:%s: %s", b.repo, b.tag, e)
+						}
 					}
 				}
 			} else {
