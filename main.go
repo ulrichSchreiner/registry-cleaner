@@ -7,12 +7,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 
 	"github.com/docker/distribution"
 	dockercontext "github.com/docker/distribution/context"
@@ -27,7 +28,7 @@ import (
 type blobinfo struct {
 	repo    string
 	tag     string
-	digest  string
+	digest  digest.Digest
 	created time.Time
 }
 
@@ -98,7 +99,7 @@ func (r *repository) getCreated(dig digest.Digest) (*time.Time, error) {
 
 	mf, err := r.manifests.Get(r.ctx, dig)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot query manifest: %s", err)
 	}
 	_, pl, err := mf.Payload()
 	if err != nil {
@@ -146,26 +147,49 @@ func (r *repository) getBlobInfos() ([]blobinfo, error) {
 	}
 
 	for _, t := range all {
-		repname := fmt.Sprintf("%s:%s", r.reponame, t)
-		if keepRepo != nil && keepRepo.FindString(repname) != "" {
-			log.Printf("[INFO] Ignoring repository '%s:%s' which is matched by keep-regexp", r.reponame, t)
-			continue
-		}
-		log.Printf("[INFO] Processing repository '%s:%s'", r.reponame, t)
+		log.WithFields(log.Fields{
+			"repository": r.reponame,
+			"tag":        t,
+		}).Info("processing tagged repository")
+
 		tg, e := r.tags.Get(r.ctx, t)
 		if e != nil {
-			log.Printf("[ERROR] cannot get tag info for tag '%s': %s", t, e)
+			log.WithFields(log.Fields{
+				"tag":   t,
+				"error": e,
+			}).Error("cannot query tag descriptor")
+			continue
+		}
+
+		repname := fmt.Sprintf("%s:%s", r.reponame, t)
+		if keepRepo != nil && keepRepo.FindString(repname) != "" {
+			log.WithFields(log.Fields{
+				"repname": r.reponame,
+				"tag":     t,
+				"type":    tg.MediaType,
+			}).Info("keep repo which is matched by keep-regexp")
 			continue
 		}
 		tm, e := r.getCreated(tg.Digest)
 		if e != nil {
-			log.Printf("[ERROR] cannot get creation time of from '%s:%s: %s", r.reponame, t, e)
+			log.WithFields(log.Fields{
+				"repname":    r.reponame,
+				"tag":        t,
+				"descriptor": tg,
+				"error":      e,
+			}).Error("cannot get creation time")
 			continue
 		}
+		log.WithFields(log.Fields{
+			"repname":    r.reponame,
+			"tag":        t,
+			"descriptor": tg,
+		}).Info("add tag info for inspection")
+
 		bi := blobinfo{
 			tag:     t,
 			repo:    r.reponame,
-			digest:  string(tg.Digest),
+			digest:  tg.Digest,
 			created: *tm,
 		}
 		result = append(result, bi)
@@ -198,6 +222,11 @@ func main() {
 		fmt.Printf("Specify a registry URL\n")
 		os.Exit(0)
 	}
+	log.SetOutput(os.Stdout)
+	formatter := &log.TextFormatter{
+		FullTimestamp: true,
+	}
+	log.SetFormatter(formatter)
 	if *keep != "" {
 		keepRepo = regexp.MustCompile(*keep)
 	}
@@ -216,11 +245,13 @@ func main() {
 
 	reg, err := client.NewRegistry(ctx, registryURL, transport)
 	checkErr(err)
-	log.Printf("[INFO] query all repos ...")
+	log.Info("query all repos ...")
 	repos := getAllRepos(ctx, reg)
 
 	for _, r := range repos {
-		log.Printf("[INFO] Processing repository: %s", r)
+		log.WithFields(log.Fields{
+			"repository": r,
+		}).Info("Processing")
 		rep, e := getRepository(ctx, registryURL, r)
 		checkErr(e)
 		blobs, e := rep.getBlobInfos()
@@ -230,22 +261,33 @@ func main() {
 				if b.created.Before(oldest) {
 					repname := fmt.Sprintf("%s:%s", b.repo, b.tag)
 					if removeRepo != nil && removeRepo.FindString(repname) == "" {
-						log.Printf("[INFO] repo:%s is too old but not matched by remove-regexp, ignoring, created: %s", repname, b.created.Format(time.RFC3339))
+						log.WithFields(log.Fields{
+							"reponame": repname,
+							"created":  b.created.Format(time.RFC3339),
+						}).Info("repo is too old but not matche by remove-regexp, ignoring")
 						continue
 					}
+					log.WithFields(log.Fields{
+						"reponame": repname,
+						"created":  b.created.Format(time.RFC3339),
+					}).Info("repo matched for deletion")
 					if *dry {
-						log.Printf("[INFO] DRY: repo:%s:%s, digest: %s, created: %s", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
+						log.WithFields(log.Fields{
+							"repo":   rep.reponame,
+							"digest": b.digest,
+						}).Info("DRY DELETE")
 					} else {
-						log.Printf("[INFO] repo:%s:%s, digest: %s, created: %s", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
-						e = rep.manifests.Delete(rep.ctx, digest.Digest(b.digest))
+						e = rep.manifests.Delete(rep.ctx, b.digest)
 						if e != nil {
-							log.Printf("[ERROR] error deleting %s:%s: %s", b.repo, b.tag, e)
+							log.WithFields(log.Fields{
+								"digest": b.digest,
+								"error":  e,
+							}).Error("error deleting digest")
 						}
 					}
 				}
-			} else {
-				log.Printf("[INFO] FOUND: repo:%s:%s, digest: %s, created: %s", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
 			}
 		}
 	}
+
 }

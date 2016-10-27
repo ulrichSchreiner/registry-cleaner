@@ -1,8 +1,41 @@
-hash: 340884670151bbe08b46e7c1b9039f05972e35de3e587b6d5ca5cab722178755
-updated: 2016-10-25T13:25:18.591253305+02:00
+hash: 2c1781b167043b939d9acb3c1e93f5f38577e414746823a9ae67ac9fef210191
+updated: 2016-10-27T09:12:57.199137419+02:00
 imports:
 - name: github.com/docker/distribution
   version: 12acdf0a6c1e56d965ac6eb395d2bce687bf22fc
   subpackages:
+  - context
+  - digest
+  - manifest
+  - manifest/schema1
+  - manifest/schema2
+  - reference
+  - registry/api/errcode
+  - registry/api/v2
   - registry/client
+  - registry/client/transport
+  - registry/storage/cache
+  - registry/storage/cache/memory
+  - uuid
+- name: github.com/docker/libtrust
+  version: fa567046d9b14f6aa788882a950d69651d230b21
+- name: github.com/gorilla/context
+  version: 14f550f51af52180c2eefed15e5fd18d63c0a64a
+- name: github.com/gorilla/mux
+  version: e444e69cbd2e2e3e0749a2f3c717cec491552bbf
+- name: github.com/Sirupsen/logrus
+  version: 4b6ea7319e214d98c938f12692336f7ca9348d6b
+- name: golang.org/x/net
+  version: 4876518f9e71663000c348837735820161a42df7
+  subpackages:
+  - context
+  - context/ctxhttp
+  - http2
+  - http2/hpack
+  - internal/timeseries
+  - trace
+- name: golang.org/x/sys
+  version: d4feaf1a7e61e1d9e79e6c4e76c6349e9cab0a03
+  subpackages:
+  - unix
 testImports: []

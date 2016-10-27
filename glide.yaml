@@ -4,3 +4,5 @@ import:
   version: ^2.5.1
   subpackages:
   - registry/client
+- package: github.com/Sirupsen/logrus
+  version: ^0.10.0
