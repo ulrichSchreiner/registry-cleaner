@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/docker/distribution"
@@ -145,15 +146,20 @@ func (r *repository) getBlobInfos() ([]blobinfo, error) {
 	}
 
 	for _, t := range all {
-		log.Printf("Processing repository '%s:%s'", r.reponame, t)
+		repname := fmt.Sprintf("%s:%s", r.reponame, t)
+		if keepRepo != nil && keepRepo.FindString(repname) != "" {
+			log.Printf("[INFO] Ignoring repository '%s:%s' which is matched by keep-regexp", r.reponame, t)
+			continue
+		}
+		log.Printf("[INFO] Processing repository '%s:%s'", r.reponame, t)
 		tg, e := r.tags.Get(r.ctx, t)
 		if e != nil {
-			log.Printf("ERROR: cannot get tag info for tag '%s': %s", t, e)
+			log.Printf("[ERROR] cannot get tag info for tag '%s': %s", t, e)
 			continue
 		}
 		tm, e := r.getCreated(tg.Digest)
 		if e != nil {
-			log.Printf("ERROR: cannot get creation time of from '%s:%s: %s", r.reponame, t, e)
+			log.Printf("[ERROR] cannot get creation time of from '%s:%s: %s", r.reponame, t, e)
 			continue
 		}
 		bi := blobinfo{
@@ -173,20 +179,30 @@ var (
 	password  = flag.String("password", "", "the password to login for your registry")
 	numDays   = flag.Int("num", -1, "number of days to keep; keep negative when you want to dump the digest's")
 	dry       = flag.Bool("dry", true, "do not really delete")
+	keep      = flag.String("keep", "", "regexp for repositories which should not be deleted, will be matched against repname:tag")
+	remove    = flag.String("remove", ".*", "regexp for repositories which should be deleted, will be matched against repname:tag")
 	transport = &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		},
 	}
+	keepRepo   *regexp.Regexp
+	removeRepo *regexp.Regexp
 )
 
 func main() {
 	flag.Parse()
 	registryURL := flag.Arg(0)
 	if registryURL == "" {
-		fmt.Printf("Specify a registry URL")
+		fmt.Printf("Specify a registry URL\n")
 		os.Exit(0)
+	}
+	if *keep != "" {
+		keepRepo = regexp.MustCompile(*keep)
+	}
+	if *remove != "" {
+		removeRepo = regexp.MustCompile(*remove)
 	}
 	ctx := dockercontext.Background()
 	if *user != "" {
@@ -200,11 +216,11 @@ func main() {
 
 	reg, err := client.NewRegistry(ctx, registryURL, transport)
 	checkErr(err)
-	log.Printf("query all repos ...")
+	log.Printf("[INFO] query all repos ...")
 	repos := getAllRepos(ctx, reg)
 
 	for _, r := range repos {
-		log.Printf("Processing repository: %s", r)
+		log.Printf("[INFO] Processing repository: %s", r)
 		rep, e := getRepository(ctx, registryURL, r)
 		checkErr(e)
 		blobs, e := rep.getBlobInfos()
@@ -212,15 +228,20 @@ func main() {
 		for _, b := range blobs {
 			if *numDays >= 0 {
 				if b.created.Before(oldest) {
+					repname := fmt.Sprintf("%s:%s", b.repo, b.tag)
+					if removeRepo != nil && removeRepo.FindString(repname) == "" {
+						log.Printf("[INFO] repo:%s is too old but not matched by remove-regexp, ignoring, created: %s", repname, b.created.Format(time.RFC3339))
+						continue
+					}
 					if *dry {
-						fmt.Printf("DRY: repo:%s:%s, digest: %s, created: %s\n", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
+						log.Printf("[INFO] DRY: repo:%s:%s, digest: %s, created: %s", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
 					} else {
-						fmt.Printf("repo:%s:%s, digest: %s, created: %s\n", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
+						log.Printf("[INFO] repo:%s:%s, digest: %s, created: %s", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
 						rep.manifests.Delete(rep.ctx, digest.Digest(b.digest))
 					}
 				}
 			} else {
-				fmt.Printf("FOUND: repo:%s:%s, digest: %s, created: %s\n", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
+				log.Printf("[INFO] FOUND: repo:%s:%s, digest: %s, created: %s", b.repo, b.tag, b.digest, b.created.Format(time.RFC3339))
 			}
 		}
 	}
