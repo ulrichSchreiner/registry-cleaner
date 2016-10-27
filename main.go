@@ -105,6 +105,25 @@ func (r *repository) getCreated(dig digest.Digest) (*time.Time, error) {
 	}
 	plmap := make(map[string]interface{})
 	json.Unmarshal(pl, &plmap)
+	config := plmap["config"]
+	if config == nil {
+		// no config, try the first history object and use v1compatibility
+		hist := plmap["history"]
+		if hist == nil {
+			return nil, fmt.Errorf("no config and history found for digest: %s", dig)
+		}
+		h := hist.([]interface{})[0]
+		history := h.(map[string]interface{})
+		v1compat := history["v1Compatibility"]
+		if v1compat == nil {
+			return nil, fmt.Errorf("no v1Compatibility node in history object")
+		}
+		// v1compat is no a json string, parse it
+		v1comp := make(map[string]interface{})
+		json.Unmarshal([]byte(v1compat.(string)), &v1comp)
+		tm, e := time.Parse(time.RFC3339Nano, v1comp["created"].(string))
+		return &tm, e
+	}
 	cfg := plmap["config"].(map[string]interface{})
 	digs := cfg["digest"].(string)
 	pl, err = r.blobs.Get(r.ctx, digest.Digest(digs))
