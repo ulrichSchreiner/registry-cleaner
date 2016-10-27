@@ -49,12 +49,14 @@ func checkErr(err error) {
 
 func getAllRepos(ctx context.Context, reg client.Registry) []string {
 	var repos []string
+	last := ""
 	for {
 		reps := make([]string, 10)
-		_, err := reg.Repositories(ctx, reps, "")
+		_, err := reg.Repositories(ctx, reps, last)
 		for _, r := range reps {
 			if r != "" {
 				repos = append(repos, r)
+				last = r
 			}
 		}
 		if err != nil {
@@ -91,7 +93,7 @@ func getRepository(ctx context.Context, repourl, repname string) (*repository, e
 	}, nil
 }
 
-func (r *repository) getConfig(dig digest.Digest) (map[string]interface{}, error) {
+func (r *repository) getCreated(dig digest.Digest) (*time.Time, error) {
 
 	mf, err := r.manifests.Get(r.ctx, dig)
 	if err != nil {
@@ -111,7 +113,8 @@ func (r *repository) getConfig(dig digest.Digest) (map[string]interface{}, error
 	}
 	plmap = make(map[string]interface{})
 	err = json.Unmarshal(pl, &plmap)
-	return plmap, err
+	tm, e := time.Parse(time.RFC3339Nano, plmap["created"].(string))
+	return &tm, e
 }
 
 func (r *repository) getBlobInfos() ([]blobinfo, error) {
@@ -129,21 +132,16 @@ func (r *repository) getBlobInfos() ([]blobinfo, error) {
 			log.Printf("ERROR: cannot get tag info for tag '%s': %s", t, e)
 			continue
 		}
-		u, e := r.getConfig(tg.Digest)
+		tm, e := r.getCreated(tg.Digest)
 		if e != nil {
-			log.Printf("ERROR: cannot get config for digest '%s': %s", tg.Digest, e)
-			continue
-		}
-		tm, e := time.Parse(time.RFC3339Nano, u["created"].(string))
-		if e != nil {
-			log.Printf("ERROR: cannot parse created timestamp as RFC3339Nano '%s': %s", u["created"], e)
+			log.Printf("ERROR: cannot get creation time of from '%s:%s: %s", r.reponame, t, e)
 			continue
 		}
 		bi := blobinfo{
 			tag:     t,
 			repo:    r.reponame,
 			digest:  string(tg.Digest),
-			created: tm,
+			created: *tm,
 		}
 		result = append(result, bi)
 	}
